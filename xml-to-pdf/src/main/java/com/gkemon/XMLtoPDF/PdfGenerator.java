@@ -30,13 +30,6 @@ import androidx.lifecycle.LifecycleOwner;
 
 import com.gkemon.XMLtoPDF.model.FailureResponse;
 import com.gkemon.XMLtoPDF.model.SuccessResponse;
-import com.karumi.dexter.Dexter;
-import com.karumi.dexter.MultiplePermissionsReport;
-import com.karumi.dexter.PermissionToken;
-import com.karumi.dexter.listener.PermissionDeniedResponse;
-import com.karumi.dexter.listener.PermissionGrantedResponse;
-import com.karumi.dexter.listener.PermissionRequest;
-import com.karumi.dexter.listener.multi.MultiplePermissionsListener;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -100,7 +93,7 @@ public class PdfGenerator {
 
 
     public interface ContextStep {
-        FromSourceStep setContext(ComponentActivity context);
+        FromSourceStep setContext(Activity context);
     }
 
     public interface FromSourceStep {
@@ -381,58 +374,10 @@ public class PdfGenerator {
                     StrictMode.VmPolicy.Builder builder = new StrictMode.VmPolicy.Builder();
                     StrictMode.setVmPolicy(builder.build());
 
-                    setUpDirectoryPath(context);
-
-                    if (TextUtils.isEmpty(directoryPath)) {
-                        postFailure("Cannot find the storage path to create the pdf file.");
-                        return;
-                    }
-
-                    if (TextUtils.isEmpty(folderName)) {
-                        directoryPath = directoryPath + "/";
-                    } else if (folderName.contains("/storage/emulated/")) {
-                        directoryPath = folderName + "/";
-                    } else
-                        directoryPath = directoryPath + "/" + folderName + "/";
-
-                    directoryPath = directoryPath.replace(" ", "_")
-                            .replace(",", "")
-                            .replace(":", "_");
-
-                    File file = new File(directoryPath);
-                    if (!file.exists()) {
-                        if (!file.mkdirs()) {
-                            postLog("Folder is not created." +
-                                    "file.mkdirs() is returning false");
-                        }
-                        //Folder is made here
-                    }
-
-                    String targetPdf = directoryPath + fileName + ".pdf";
-
-                    File fileFinalResult = new File(targetPdf);
-                    //File is created under the folder but not yet written.
-
+                    File fileFinalResult = new File(context.getCacheDir(), fileName + ".pdf");
                     disposeDisposable();
                     postOnGenerationStart();
-                    //When user want to save pdf in shared storage
-                    if (xmlToPDFLifecycleObserver != null) {
-                        xmlToPDFLifecycleObserver.setPdfSaveListener(uri -> {
-                            if (uri != null)
-                                writePDFOnSavedBlankPDFFile(document, uri);
-                            else {
-                                postFailure(errorMessageOfXMLtoPDFLifecycleObserver);
-                            }
-                        });
-                        Intent intent;
-                        intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-                        intent.putExtra(Intent.EXTRA_TITLE, fileName);
-                        intent.addCategory(Intent.CATEGORY_OPENABLE);
-                        getPDFIntent(fileFinalResult, intent);
-                        xmlToPDFLifecycleObserver.launchPDFSaverPicker(intent);
-                    } else {
-                        writePDF(document, fileFinalResult);
-                    }
+                    writePDF(document, fileFinalResult);
                 } else {
                     postFailure("Context is null");
                 }
@@ -506,91 +451,10 @@ public class PdfGenerator {
                 disposable.dispose();
         }
 
-        private void setUpDirectoryPath(Context context) {
-
-            String state = Environment.getExternalStorageState();
-
-            // Make sure it's available
-            if (!TextUtils.isEmpty(state) && Environment.MEDIA_MOUNTED.equals(state)) {
-                postLog("Your external storage is mounted");
-                // We can read and write the media
-                directoryPath = context.getExternalFilesDir(null) != null ?
-                        context.getExternalFilesDir(null).getAbsolutePath() : "";
-
-                if (TextUtils.isEmpty(directoryPath))
-                    postLog("context.getExternalFilesDir().getAbsolutePath() is returning null.");
-
-            } else {
-                postLog("Your external storage is unmounted");
-                // Load another directory, probably local memory
-                directoryPath = context.getFilesDir() != null ? context.getFilesDir().getAbsolutePath() : "";
-                if (TextUtils.isEmpty(directoryPath))
-                    postFailure("context.getFilesDir().getAbsolutePath() is also returning null.");
-                else postLog("PDF file creation path is " + directoryPath);
-            }
-        }
-
-        private boolean hasAllPermission(Context context) {
-            if (context == null) {
-                postFailure("Context is null");
-                return false;
-            }
-            return ContextCompat.checkSelfPermission(context,
-                    Manifest.permission.READ_EXTERNAL_STORAGE) ==
-                    PackageManager.PERMISSION_GRANTED &&
-                    ContextCompat.checkSelfPermission(context,
-                            Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
-                            PackageManager.PERMISSION_GRANTED;
-        }
-
         @Override
         public void build(PdfGeneratorListener pdfGeneratorListener) {
             this.pdfGeneratorListener = pdfGeneratorListener;
-            if (hasAllPermission(context) || (xmlToPDFLifecycleObserver != null && android.os.Build.VERSION.SDK_INT > 32)) {
-                print();
-            } else {
-                if (android.os.Build.VERSION.SDK_INT >= 33) {
-                    postFailure("Your current sdk is equal and greater then 33, so you need to set ''xmlToPDFLifecycleObserver'' ." +
-                            "To see example please check this code - https://github.com/Gkemon/Android-XML-to-PDF-Generator/blob/master/sample/src/main/java/com/emon/exampleXMLtoPDF/MainActivity.java" +
-                            ", line-67.");
-                } else {
-                    postLog("WRITE_EXTERNAL_STORAGE and READ_EXTERNAL_STORAGE Permission is not given." +
-                            " Permission taking popup (using https://github.com/Karumi/Dexter) is going " +
-                            "to be shown");
-                }
-                Dexter.withContext(context)
-                        .withPermissions(Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                                Manifest.permission.READ_EXTERNAL_STORAGE)
-                        .withListener(new MultiplePermissionsListener() {
-                            @Override
-                            public void onPermissionsChecked(MultiplePermissionsReport multiplePermissionsReport) {
-
-                                for (PermissionDeniedResponse deniedResponse :
-                                        multiplePermissionsReport.getDeniedPermissionResponses()) {
-                                    postLog("Denied permission: " + deniedResponse.getPermissionName());
-                                }
-                                for (PermissionGrantedResponse grantedResponse :
-                                        multiplePermissionsReport.getGrantedPermissionResponses()) {
-                                    postLog("Granted permission: " + grantedResponse.getPermissionName());
-                                }
-                                if (multiplePermissionsReport.areAllPermissionsGranted()) {
-                                    print();
-                                } else
-                                    postLog("All necessary permission is not granted by user. Please do that first");
-
-                            }
-
-                            @Override
-                            public void onPermissionRationaleShouldBeShown(List<PermissionRequest> list, PermissionToken permissionToken) {
-
-                            }
-                        })
-                        .withErrorListener(error -> postLog("Error from Dexter " +
-                                "(https://github.com/Karumi/Dexter) but this library is not maintaining " +
-                                "anymore so please look at this issue - https://github.com/Gkemon/Android-XML-to-PDF-Generator/issues/54#issuecomment-1550307371 " +
-                                error.toString())).check();
-            }
-
+            print();
         }
 
 
@@ -623,7 +487,7 @@ public class PdfGenerator {
 
 
         @Override
-        public FromSourceStep setContext(ComponentActivity context) {
+        public FromSourceStep setContext(Activity context) {
             this.context = context;
             return this;
         }

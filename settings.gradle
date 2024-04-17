@@ -1,3 +1,0 @@
-include ':sample' ,
-        ':xml-to-pdf'
-rootProject.name='Android XML to Pdf'
